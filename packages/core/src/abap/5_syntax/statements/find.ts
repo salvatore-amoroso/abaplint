@@ -50,14 +50,16 @@ export class Find implements StatementSyntax {
       this.inline(cfound, input, IntegerType.get());
     }
 
-    const lnfound = node.findExpressionAfterToken("LENGTH");
-    if (lnfound && lnfound.get() instanceof Expressions.Target) {
-      this.inline(lnfound, input, IntegerType.get());
+    const lnfound = node.findExpressionsAfterToken("LENGTH");
+    for (const ln of lnfound) {
+      if (ln.get() instanceof Expressions.Target) {
+        this.inline(ln, input, IntegerType.get());
+      }
     }
 
     if (node.findDirectTokenByText("SUBMATCHES")) {
       for (const t of node.findDirectExpressions(Expressions.Target)) {
-        if (t === rfound || t === lfound || t === cfound || t === lnfound) {
+        if (t === rfound || t === lfound || t === cfound || lnfound.indexOf(t) >= 0) {
           continue;
         } else if (ofound.indexOf(t) >= 0) {
           continue;

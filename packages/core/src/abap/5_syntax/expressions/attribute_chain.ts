@@ -4,9 +4,7 @@ import * as Expressions from "../../2_statements/expressions";
 import {AbstractType} from "../../types/basic/_abstract_type";
 import {VoidType} from "../../types/basic/void_type";
 import {DataReference, ObjectReferenceType, StructureType, TableType, UnknownType} from "../../types/basic";
-import {ObjectOriented} from "../_object_oriented";
 import {ReferenceType} from "../_reference";
-import {TypedIdentifier} from "../../types/_typed_identifier";
 import {AttributeName} from "../../2_statements/expressions";
 import {CheckSyntaxKey, SyntaxInput, syntaxIssue} from "../_syntax_input";
 import {ComponentName} from "./component_name";
@@ -15,13 +13,16 @@ import {TableExpression} from "./table_expression";
 import {FieldOffset} from "./field_offset";
 import {FieldLength} from "./field_length";
 import {substringType} from "./_substring";
+import {targetReference} from "./_target_reference";
 
 export class AttributeChain {
   public static runSyntax(
     inputContext: AbstractType | undefined,
     node: INode,
     input: SyntaxInput,
-    type: ReferenceType[]): AbstractType | undefined {
+    type: ReferenceType[],
+    dereferenced = false,
+    writeTarget = false): AbstractType | undefined {
 
     if (inputContext instanceof VoidType) {
       return inputContext;
@@ -36,31 +37,14 @@ export class AttributeChain {
       return VoidType.get(CheckSyntaxKey);
     }
 
-    const def = input.scope.findObjectDefinition(inputContext.getIdentifierName());
-    if (def === undefined) {
-      const message = "Definition for \"" + inputContext.getIdentifierName() + "\" not found in scope(AttributeChain)";
-      input.issues.push(syntaxIssue(input, node.getFirstToken(), message));
-      return VoidType.get(CheckSyntaxKey);
-    }
-    const nameToken = first.getFirstToken();
-    const name = nameToken.getStr();
-    const helper = new ObjectOriented(input.scope);
-
-    let context: TypedIdentifier | undefined = helper.searchAttributeName(def, name);
-    if (context === undefined) {
-      context = helper.searchConstantName(def, name);
-    }
-    if (context === undefined) {
-      const message = "Attribute or constant \"" + name + "\" not found in \"" + def.getName() + "\"";
-      input.issues.push(syntaxIssue(input, nameToken, message));
-      return VoidType.get(CheckSyntaxKey);
-    }
-    for (const t of type) {
-      input.scope.addReference(nameToken, context, t, input.filename);
-    }
-
-    let contextType: AbstractType | undefined = context.getType();
     const children = node.getChildren();
+    // Binding an alias records potential writes without modifying the attribute.
+    const writing = writeTarget || (type.includes(ReferenceType.DataWriteReference)
+      && type.includes(ReferenceType.DataReadReference) === false);
+    const firstTarget = writing ? targetReference(children, 1, dereferenced) : undefined;
+    const firstType = firstTarget === ReferenceType.DataWriteReference && writeTarget ? type : firstTarget ?? type;
+    let contextType = AttributeNameSyntax.runSyntax(
+      inputContext, first, input, firstType, true, firstTarget === ReferenceType.DataWriteReference);
     for (let i = 1; i < children.length; i++) {
       const child = children[i];
 
@@ -79,7 +63,10 @@ export class AttributeChain {
         }
       } else if (child.get() instanceof Expressions.ComponentName) {
         if (contextType instanceof ObjectReferenceType || contextType instanceof DataReference) {
-          contextType = AttributeNameSyntax.runSyntax(contextType, child, input, type);
+          const target = writing ? targetReference(children, i + 1, dereferenced) : undefined;
+          const refType = target === ReferenceType.DataWriteReference && writeTarget ? type : target ?? type;
+          contextType = AttributeNameSyntax.runSyntax(
+            contextType, child, input, refType, true, target === ReferenceType.DataWriteReference);
         } else {
           contextType = ComponentName.runSyntax(contextType, child, input);
         }

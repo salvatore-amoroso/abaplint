@@ -7,8 +7,10 @@ import {SyntaxInput} from "../_syntax_input";
 export class Search implements StatementSyntax {
   public runSyntax(node: StatementNode, input: SyntaxInput): void {
 
+    const target = node.findDirectTokenByText("MARK") ? node.findDirectExpression(Expressions.Source) : undefined;
     for (const s of node.findDirectExpressions(Expressions.Source)) {
-      Source.runSyntax(s, input);
+      const write = s === target;
+      Source.runSyntax(s, input, undefined, write, false, true, write);
     }
 
   }

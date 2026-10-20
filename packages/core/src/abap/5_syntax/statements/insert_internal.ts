@@ -14,11 +14,9 @@ import {SyntaxInput, syntaxIssue} from "../_syntax_input";
 export class InsertInternal implements StatementSyntax {
   public runSyntax(node: StatementNode, input: SyntaxInput): void {
 
-    let targetType: AbstractType | undefined;
     const t = node.findDirectExpression(Expressions.Target);
-    if (t) {
-      targetType = Target.runSyntax(t, input);
-    }
+    const tableType = t ? Target.runSyntax(t, input) : undefined;
+    let targetType: AbstractType | undefined = tableType;
     if (!(targetType instanceof TableType)
         && !(targetType instanceof VoidType)
         && !(targetType instanceof AnyType)
@@ -81,12 +79,21 @@ export class InsertInternal implements StatementSyntax {
     }
 
     const afterInto = node.findExpressionAfterToken("INTO");
+    const reference = node.findDirectTokenByText("REFERENCE")
+      ? node.findDirectExpressions(Expressions.Target).find(target => target !== t) : undefined;
+    if (reference && reference !== afterInto && sourceType) {
+      if (reference.findDirectExpression(Expressions.InlineData)) {
+        InlineData.runSyntax(reference, input, new DataReference(sourceType));
+      } else {
+        Target.runSyntax(reference, input);
+      }
+    }
     if (afterInto?.get() instanceof Expressions.Target && sourceType) {
       const inline = afterInto.findDirectExpression(Expressions.InlineData);
       if (inline) {
         InlineData.runSyntax(afterInto, input, new DataReference(sourceType));
       } else {
-        const type = Target.runSyntax(afterInto, input);
+        const type = afterInto === t ? tableType : Target.runSyntax(afterInto, input);
         if (type instanceof TableType && type.getAccessType() === TableAccessType.hashed) {
           const message = "Implicit or explicit index operation on hashed table is not possible";
           input.issues.push(syntaxIssue(input, node.getFirstToken(), message));

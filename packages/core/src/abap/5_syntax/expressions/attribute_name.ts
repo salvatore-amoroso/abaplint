@@ -18,7 +18,8 @@ export class AttributeName {
     node: INode,
     input: SyntaxInput,
     type?: ReferenceType | ReferenceType[] | undefined,
-    error = true): AbstractType | undefined {
+    error = true,
+    writeTarget = false): AbstractType | undefined {
 
     if (context instanceof VoidType) {
       return context;
@@ -56,6 +57,12 @@ export class AttributeName {
           input.issues.push(syntaxIssue(input, token, message));
           return VoidType.get(CheckSyntaxKey);
         }
+      }
+      const readOnly = found instanceof ClassAttribute && helper.canWriteAttribute(def, found) === false;
+      if ((writeTarget || type === ReferenceType.DataWriteReference) && readOnly) {
+        const message = `Attribute "${name}" is read-only and cannot be modified`;
+        input.issues.push(syntaxIssue(input, token, message));
+        return VoidType.get(CheckSyntaxKey);
       }
       if (type) {
         input.scope.addReference(token, found, type, input.filename);

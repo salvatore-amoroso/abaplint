@@ -63,5 +63,12 @@ export class Convert implements StatementSyntax {
       }
     }
 
+    const handledTargets = [...timeTargets, dateTarget, stampTarget, utclongTarget];
+    for (const target of node.findDirectExpressions(Expressions.Target)) {
+      if (!handledTargets.includes(target) && target.findDirectExpression(Expressions.InlineData) === undefined) {
+        Target.runSyntax(target, input);
+      }
+    }
+
   }
 }

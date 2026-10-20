@@ -35,6 +35,7 @@ export class ClearExportingParameters implements IRule {
       extendedInformation: `An EXPORTING parameter passed by reference behaves like a CHANGING parameter: it is not
 initialized when the method is called, so it can still contain a value supplied by the caller. Clear or overwrite it
 before reading it, so a leftover value is not accidentally used.
+Writing individual components or substrings does not initialize the whole parameter.
 
 https://github.com/SAP/styleguides/blob/main/clean-abap/CleanABAP.md#clear-or-overwrite-exporting-reference-parameters
 
@@ -198,7 +199,8 @@ ENDCLASS.`,
           firstRead = reference;
         }
       } else if (reference.referenceType === ReferenceType.DataWriteReference) {
-        if (earliestWrite === undefined || pos.isBefore(earliestWrite.position.getStart())) {
+        if ((earliestWrite === undefined || pos.isBefore(earliestWrite.position.getStart()))
+            && this.isPartialWrite(reference, obj) === false) {
           earliestWrite = reference;
         }
       }
@@ -217,6 +219,19 @@ ENDCLASS.`,
 
     const message = `EXPORTING parameter "${parameter.getName().toLowerCase()}" read before it is cleared or assigned`;
     return Issue.atIdentifier(firstRead.position, message, this.getMetadata().key, this.conf.severity);
+  }
+
+  private isPartialWrite(reference: IReference, obj: ABAPObject): boolean {
+    const token = reference.position.getToken();
+    const statement = obj.getABAPFileByName(reference.position.getFilename())?.getStatements().find(s =>
+      s.getTokens().includes(token));
+    const tokens = statement?.getTokens() || [];
+    const index = tokens.indexOf(token);
+    const next = tokens[index + 1]?.getStr();
+    if (next === "[" && tokens[index + 2]?.getStr() === "]") {
+      return false;
+    }
+    return index >= 0 && ["-", "->", "=>", "[", "+", "("].includes(next);
   }
 
   private isReferenceOrAssign(reference: IReference, obj: ABAPObject): boolean {

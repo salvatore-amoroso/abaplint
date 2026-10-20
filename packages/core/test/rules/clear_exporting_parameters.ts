@@ -83,6 +83,71 @@ describe("Rule: clear_exporting_parameters", () => {
     expect(issues.length).to.equal(1);
   });
 
+  for (const test of [
+    {name: "SEARCH AND MARK", body: "SEARCH ev_result FOR 'A' AND MARK.",
+      definition: "TYPES ty_line TYPE c LENGTH 72. METHODS foo EXPORTING ev_result TYPE ty_line."},
+    {name: "editable EDITOR-CALL", body: "EDITOR-CALL FOR ev_result.",
+      definition: "TYPES ty_line TYPE c LENGTH 72. TYPES ty_lines TYPE STANDARD TABLE OF ty_line WITH DEFAULT KEY. METHODS foo EXPORTING ev_result TYPE ty_lines."},
+    {name: "table-expression method receiver", body: "ev_result[ 1 ]->foo( ).",
+      definition: "TYPES ty_objects TYPE STANDARD TABLE OF REF TO zcl_foo WITH DEFAULT KEY. METHODS foo EXPORTING ev_result TYPE ty_objects."},
+    {name: "IMPORT through a data reference", body: "DATA text TYPE string. IMPORT text FROM MEMORY ID 'x' CODE PAGE INTO ev_result->*.",
+      definition: "TYPES ty_line TYPE c LENGTH 72. METHODS foo EXPORTING ev_result TYPE REF TO ty_line."},
+    {name: "IMPORT through an object reference", body: "DATA text TYPE string. IMPORT text FROM MEMORY ID 'x' CODE PAGE INTO ev_result->codepage.",
+      definition: "DATA codepage TYPE c LENGTH 72. METHODS foo EXPORTING ev_result TYPE REF TO zcl_foo."},
+    {name: "IMPORT into an existing table row", body: "DATA text TYPE string. IMPORT text FROM MEMORY ID 'x' CODE PAGE INTO ev_result[ 1 ].",
+      definition: "TYPES ty_line TYPE c LENGTH 72. TYPES ty_lines TYPE STANDARD TABLE OF ty_line WITH DEFAULT KEY. METHODS foo EXPORTING ev_result TYPE ty_lines."},
+    {name: "OVERLAY", body: "OVERLAY ev_result WITH 'x'. DATA(got) = ev_result.",
+      definition: "TYPES ty_line TYPE c LENGTH 72. METHODS foo EXPORTING ev_result TYPE ty_line."},
+    {name: "GET DATASET through a data reference", body: "DATA filename TYPE string. GET DATASET filename POSITION ev_result->*. DATA(got) = ev_result->*.",
+      definition: "METHODS foo EXPORTING ev_result TYPE REF TO i."},
+    {name: "GET DATASET through an object reference", body: "DATA filename TYPE string. GET DATASET filename POSITION ev_result->position. DATA(got) = ev_result->position.",
+      definition: "DATA position TYPE i. METHODS foo EXPORTING ev_result TYPE REF TO zcl_foo."},
+    {name: "GET DATASET into an existing table row", body: "DATA filename TYPE string. GET DATASET filename POSITION ev_result[ 1 ]. DATA(got) = ev_result[ 1 ].",
+      definition: "TYPES ty_numbers TYPE STANDARD TABLE OF i WITH DEFAULT KEY. METHODS foo EXPORTING ev_result TYPE ty_numbers."},
+    {name: "GET DATASET into a structure component", body: "DATA filename TYPE string. GET DATASET filename POSITION ev_result-position. DATA(got) = ev_result-other.",
+      definition: "TYPES: BEGIN OF ty_record, position TYPE i, other TYPE i, END OF ty_record. METHODS foo EXPORTING ev_result TYPE ty_record."},
+    {name: "IMPORT into a structure component", body: "DATA text TYPE string. IMPORT text FROM MEMORY ID 'x' CODE PAGE INTO ev_result-codepage. DATA(got) = ev_result-other.",
+      definition: "TYPES: BEGIN OF ty_record, codepage TYPE c LENGTH 4, other TYPE i, END OF ty_record. METHODS foo EXPORTING ev_result TYPE ty_record."},
+    {name: "IMPORT into a substring", body: "DATA text TYPE string. IMPORT text FROM MEMORY ID 'x' CODE PAGE INTO ev_result+0(4). DATA(got) = ev_result+4(4).",
+      definition: "TYPES ty_text TYPE c LENGTH 8. METHODS foo EXPORTING ev_result TYPE ty_text."},
+  ]) {
+    it(`${test.name} reads the existing exporting parameter`, async () => {
+      const issues = await runSingle(wrap(test.body, test.definition));
+      expect(issues.map(issue => issue.getMessage()))
+        .to.deep.equal(['EXPORTING parameter "ev_result" read before it is cleared or assigned']);
+    });
+    it(`${test.name} allows an exporting parameter cleared first`, async () => {
+      const issues = await runSingle(wrap("CLEAR ev_result. " + test.body, test.definition));
+      expect(issues.length).to.equal(0);
+    });
+  }
+
+  for (const body of ["CLEAR ev_result[].", "ev_result[] = VALUE #( )."]) {
+    it(`${body} initializes the whole exporting table`, async () => {
+      const definition = "TYPES ty_numbers TYPE STANDARD TABLE OF i WITH DEFAULT KEY. METHODS foo EXPORTING ev_result TYPE ty_numbers.";
+      const issues = await runSingle(wrap(body + " DATA(got) = lines( ev_result ).", definition));
+      expect(issues.length).to.equal(0);
+    });
+  }
+
+  for (const test of [
+    {target: "&1+0(4)", clear: "", issues: 1},
+    {target: "&1+0(4)", clear: "CLEAR ev_result.", issues: 0},
+    {target: "&1", clear: "", issues: 0},
+  ]) {
+    it(`macro output ${test.target} after ${test.clear || "no initialization"}`, async () => {
+      const macro = `DEFINE output_value.
+  IMPORT text FROM MEMORY ID 'x' CODE PAGE INTO ${test.target}.
+END-OF-DEFINITION.
+`;
+      const definition = "TYPES ty_text TYPE c LENGTH 8. METHODS foo EXPORTING ev_result TYPE ty_text.";
+      const body = `DATA text TYPE string. ${test.clear} output_value ev_result. DATA(got) = ev_result+4(4).`;
+      const source = macro + wrap(body, definition).replace("DEFINITION PUBLIC.", "DEFINITION.");
+      const issues = await runFiles([new MemoryFile("zmacro.prog.abap", source)]);
+      expect(issues.length).to.equal(test.issues);
+    });
+  }
+
   it("CLEAR before read, no issue", async () => {
     const issues = await runSingle(wrap("    CLEAR ev_result.\n    ev_result = ev_result + 1."));
     expect(issues.length).to.equal(0);

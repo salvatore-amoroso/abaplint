@@ -46,7 +46,8 @@ export class Source {
     targetType?: AbstractType,
     writeReference = false,
     allowGenericDeference = false,
-    readReference = true): AbstractType | undefined {
+    readReference = true,
+    writeTarget = false): AbstractType | undefined {
 
     if (node === undefined) {
       return undefined;
@@ -264,7 +265,8 @@ export class Source {
           const found = Cast.runSyntax(first, input, targetType);
           context = arithmetic === true ? this.infer(context, found, true) : found;
         } else if (get instanceof Expressions.FieldChain) {
-          const found = FieldChain.runSyntax(first, input, type, allowGenericDeference);
+          const dereferenced = children[0]?.get() instanceof Expressions.Dereference;
+          const found = FieldChain.runSyntax(first, input, type, allowGenericDeference, false, dereferenced, writeTarget);
           context = arithmetic === true ? this.infer(context, found, true) : found;
         } else if (get instanceof Expressions.StringTemplate) {
           context = StringTemplate.runSyntax(first, input);
@@ -294,7 +296,8 @@ export class Source {
             hexNext = true;
           }
         } else if (get instanceof Expressions.AttributeChain) {
-          context = AttributeChain.runSyntax(context, first, input, type);
+          const dereferenced = children[0]?.get() instanceof Expressions.Dereference;
+          context = AttributeChain.runSyntax(context, first, input, type, dereferenced, writeTarget);
         }
       }
 

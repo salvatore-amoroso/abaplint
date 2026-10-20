@@ -8,8 +8,10 @@ import {SyntaxInput} from "../_syntax_input";
 export class Add implements StatementSyntax {
   public runSyntax(node: StatementNode, input: SyntaxInput): void {
 
+    const giving = node.findExpressionAfterToken("GIVING");
     for (const s of node.findDirectExpressions(Expressions.Source)) {
-      Source.runSyntax(s, input);
+      const write = s === giving;
+      Source.runSyntax(s, input, undefined, write, false, !write);
     }
 
     for (const t of node.findDirectExpressions(Expressions.Target)) {

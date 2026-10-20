@@ -17,6 +17,7 @@ import {SourceField} from "./source_field";
 import {isFieldSymbolItself, substringType} from "./_substring";
 import {CheckSyntaxKey, SyntaxInput, syntaxIssue} from "../_syntax_input";
 import {LanguageVersion, Release, releaseAtLeast} from "../../../version";
+import {targetReference} from "./_target_reference";
 
 export class FieldChain {
 
@@ -24,7 +25,10 @@ export class FieldChain {
     node: ExpressionNode,
     input: SyntaxInput,
     refType?: ReferenceType | ReferenceType[] | undefined,
-    allowGenericDeference = false): AbstractType | undefined {
+    allowGenericDeference = false,
+    methodCall = false,
+    dereferenced = false,
+    writeTarget = false): AbstractType | undefined {
 
     if (node.getFirstChild()?.get() instanceof Expressions.SourceField
         && node.findDirectExpression(Expressions.ComponentName)) {
@@ -44,7 +48,15 @@ export class FieldChain {
 
     let context: AbstractType | undefined;
     const children = node.getChildren();
-    context = this.findTop(children[0], input, refType);
+    // Binding an alias records potential writes without modifying the attribute.
+    const writing = writeTarget || refType === ReferenceType.DataWriteReference
+      || (Array.isArray(refType) && refType.includes(ReferenceType.DataWriteReference)
+        && refType.includes(ReferenceType.DataReadReference) === false);
+    const rootTarget = writing ? targetReference(children, 1, dereferenced) : undefined;
+    const rootType = rootTarget === ReferenceType.DataReadReference ? rootTarget
+      : writing && children.some(c => c.get() instanceof Expressions.TableExpression)
+        ? [ReferenceType.DataReadReference, ReferenceType.DataWriteReference] : refType;
+    context = this.findTop(children[0], input, rootType);
 
     let prev = children[0].concatTokens();
     for (let i = 1; i < children.length; i++) {
@@ -123,7 +135,10 @@ export class FieldChain {
           context = context.getRowType();
         }
       } else if (current.get() instanceof Expressions.AttributeName) {
-        context = AttributeName.runSyntax(context, current, input, refType);
+        const tableCall = methodCall && children.slice(i + 1).some(c => c.get() instanceof Expressions.TableExpression);
+        const target = writing || tableCall ? targetReference(children, i + 1, dereferenced) : undefined;
+        const type = target === ReferenceType.DataWriteReference && (writeTarget || tableCall) ? refType : target ?? refType;
+        context = AttributeName.runSyntax(context, current, input, type, true, target === ReferenceType.DataWriteReference);
       } else if (current.get() instanceof Expressions.FieldOffset && current instanceof ExpressionNode) {
         const offset = FieldOffset.runSyntax(current, input);
         if (!isFieldSymbolItself(children, i)) {

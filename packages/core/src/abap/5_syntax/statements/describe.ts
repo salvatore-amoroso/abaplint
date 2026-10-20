@@ -59,5 +59,12 @@ export class Describe implements StatementSyntax {
       }
     }
 
+    const handledTargets = [linesTarget, typeTarget, lengthTarget, componentsTarget];
+    for (const target of node.findDirectExpressions(Expressions.Target)) {
+      if (!handledTargets.includes(target) && target.findDirectExpression(Expressions.InlineData) === undefined) {
+        Target.runSyntax(target, input);
+      }
+    }
+
   }
 }
